@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sorting Algorithm Race</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  .bar { display:inline-block; vertical-align:bottom; transition: height 0.04s, background 0.04s; }
+  .bar-default { background: #3b82f6; }
+  .bar-comparing { background: #eab308; }
+  .bar-sorted { background: #22c55e; }
+  .algo-box { background:#1e293b; border-radius:12px; padding:12px; flex:1; min-width:160px; }
+  .chart { height:160px; display:flex; align-items:flex-end; gap:1px; overflow:hidden; }
+  .winner-badge { display:none; }
+  .winner .winner-badge { display:inline; }
+</style>
+</head>
+<body class="bg-slate-900 text-white min-h-screen flex flex-col items-center p-4">
+<h1 class="text-2xl font-bold mt-2 mb-3">Sorting Algorithm Race</h1>
+
+<div class="flex flex-wrap gap-4 mb-4 items-center justify-center">
+  <div class="flex items-center gap-2">
+    <label for="arraySize" class="text-sm">Array Size:</label>
+    <input type="range" id="arraySize" min="30" max="60" value="40" class="w-24" aria-label="Array size">
+    <span id="arraySizeVal" class="text-sm">40</span>
+  </div>
+  <div class="flex items-center gap-2">
+    <label for="speed" class="text-sm">Speed:</label>
+    <input type="range" id="speed" min="1" max="100" value="40" class="w-24" aria-label="Speed">
+    <span id="speedVal" class="text-sm">40</span>
+  </div>
+  <button onclick="startRace()" id="raceBtn" class="px-5 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold">Race!</button>
+  <button onclick="resetRace()" class="px-4 py-2 bg-slate-600 hover:bg-slate-500 rounded-lg font-semibold">Reset</button>
+</div>
+
+<div class="flex flex-wrap gap-3 w-full max-w-5xl justify-center" id="algoBoxes">
+  <div class="algo-box" id="box-bubble">
+    <div class="font-bold mb-1">Bubble Sort <span class="winner-badge text-yellow-400 text-lg">★</span></div>
+    <div class="chart" id="chart-bubble"></div>
+    <div class="text-xs text-gray-300 mt-1">Comparisons: <span id="cmp-bubble" class="font-bold text-white">0</span></div>
+    <div class="text-xs text-gray-300">Swaps: <span id="swp-bubble" class="font-bold text-white">0</span></div>
+  </div>
+  <div class="algo-box" id="box-insertion">
+    <div class="font-bold mb-1">Insertion Sort <span class="winner-badge text-yellow-400 text-lg">★</span></div>
+    <div class="chart" id="chart-insertion"></div>
+    <div class="text-xs text-gray-300 mt-1">Comparisons: <span id="cmp-insertion" class="font-bold text-white">0</span></div>
+    <div class="text-xs text-gray-300">Swaps: <span id="swp-insertion" class="font-bold text-white">0</span></div>
+  </div>
+  <div class="algo-box" id="box-merge">
+    <div class="font-bold mb-1">Merge Sort <span class="winner-badge text-yellow-400 text-lg">★</span></div>
+    <div class="chart" id="chart-merge"></div>
+    <div class="text-xs text-gray-300 mt-1">Comparisons: <span id="cmp-merge" class="font-bold text-white">0</span></div>
+    <div class="text-xs text-gray-300">Swaps: <span id="swp-merge" class="font-bold text-white">0</span></div>
+  </div>
+  <div class="algo-box" id="box-quick">
+    <div class="font-bold mb-1">Quick Sort <span class="winner-badge text-yellow-400 text-lg">★</span></div>
+    <div class="chart" id="chart-quick"></div>
+    <div class="text-xs text-gray-300 mt-1">Comparisons: <span id="cmp-quick" class="font-bold text-white">0</span></div>
+    <div class="text-xs text-gray-300">Swaps: <span id="swp-quick" class="font-bold text-white">0</span></div>
+  </div>
+</div>
+
+<script>
+let originalArray = [], algos = {}, timers = {}, raceOver = false;
+
+document.getElementById('arraySize').addEventListener('input', e=>{
+  document.getElementById('arraySizeVal').textContent=e.target.value;
+  resetRace();
+});
+document.getElementById('speed').addEventListener('input', e=>{
+  document.getElementById('speedVal').textContent=e.target.value;
+});
+
+function shuffle(a){const b=[...a];for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];}return b;}
+
+function resetRace() {
+  Object.values(timers).forEach(t=>clearInterval(t)); timers={};
+  raceOver=false;
+  const n=parseInt(document.getElementById('arraySize').value);
+  originalArray=Array.from({length:n},(_,i)=>i+1);
+  originalArray=shuffle(originalArray);
+  ['bubble','insertion','merge','quick'].forEach(name=>{
+    document.getElementById(`box-${name}`).classList.remove('winner');
+    document.getElementById(`cmp-${name}`).textContent='0';
+    document.getElementById(`swp-${name}`).textContent='0';
+    renderChart(name,originalArray.map((v,i)=>({v,state:'default'})));
+  });
+  document.getElementById('raceBtn').disabled=false;
+}
+
+function renderChart(name, bars) {
+  const el=document.getElementById(`chart-${name}`);
+  const maxV=Math.max(...bars.map(b=>b.v));
+  const bw=Math.max(2,Math.floor((el.offsetWidth||200)/bars.length)-1);
+  el.innerHTML=bars.map(b=>{
+    const h=Math.floor((b.v/maxV)*150)+2;
+    const cls=`bar bar-${b.state}`;
+    return `<div class="${cls}" style="height:${h}px;width:${bw}px" aria-hidden="true"></div>`;
+  }).join('');
+}
+
+// Generator-based sorts that yield steps
+function* bubbleSort(arr) {
+  const a=[...arr]; const n=a.length;
+  for(let i=0;i<n-1;i++){
+    for(let j=0;j<n-i-1;j++){
+      yield {type:'compare',i:j,j:j+1,arr:[...a]};
+      if(a[j]>a[j+1]){[a[j],a[j+1]]=[a[j+1],a[j]];yield{type:'swap',i:j,j:j+1,arr:[...a]};}
+    }
+    yield{type:'sorted',idx:n-i-1,arr:[...a]};
+  }
+  yield{type:'done',arr:[...a]};
+}
+
+function* insertionSort(arr) {
+  const a=[...arr]; const n=a.length;
+  for(let i=1;i<n;i++){
+    let k=i;
+    while(k>0){
+      yield{type:'compare',i:k-1,j:k,arr:[...a]};
+      if(a[k]<a[k-1]){[a[k],a[k-1]]=[a[k-1],a[k]];yield{type:'swap',i:k-1,j:k,arr:[...a]};k--;}
+      else break;
+    }
+  }
+  yield{type:'done',arr:[...a]};
+}
+
+function* mergeSort(arr) {
+  const a=[...arr];
+  const steps=[];
+  function ms(a,l,r){
+    if(r-l<=1)return;
+    const m=Math.floor((l+r)/2);
+    ms(a,l,m);ms(a,m,r);
+    const left=a.slice(l,m),right=a.slice(m,r);
+    let i=0,j=0,k=l;
+    while(i<left.length&&j<right.length){
+      steps.push({type:'compare',i:l+i,j:m+j,arr:[...a]});
+      if(left[i]<=right[j]){a[k++]=left[i++];}
+      else{a[k++]=right[j++];}
+      steps.push({type:'swap',i:k-1,j:k-1,arr:[...a]});
+    }
+    while(i<left.length){a[k++]=left[i++];steps.push({type:'swap',i:k-1,j:k-1,arr:[...a]});}
+    while(j<right.length){a[k++]=right[j++];steps.push({type:'swap',i:k-1,j:k-1,arr:[...a]});}
+  }
+  ms(a,0,a.length);
+  yield*steps;
+  yield{type:'done',arr:[...a]};
+}
+
+function* quickSort(arr) {
+  const a=[...arr];
+  const stack=[[0,a.length-1]];
+  while(stack.length){
+    const[lo,hi]=stack.pop();
+    if(lo>=hi)continue;
+    const pivot=a[hi];
+    let i=lo-1;
+    for(let j=lo;j<hi;j++){
+      yield{type:'compare',i:j,j:hi,arr:[...a]};
+      if(a[j]<=pivot){i++;[a[i],a[j]]=[a[j],a[i]];yield{type:'swap',i,j,arr:[...a]};}
+    }
+    [a[i+1],a[hi]]=[a[hi],a[i+1]];
+    yield{type:'swap',i:i+1,j:hi,arr:[...a]};
+    stack.push([lo,i],[i+2,hi]);
+  }
+  yield{type:'done',arr:[...a]};
+}
+
+function startRace() {
+  Object.values(timers).forEach(t=>clearInterval(t)); timers={};
+  raceOver=false;
+  document.getElementById('raceBtn').disabled=true;
+  ['bubble','insertion','merge','quick'].forEach(name=>{
+    document.getElementById(`box-${name}`).classList.remove('winner');
+  });
+  const sortFns={bubble:bubbleSort,insertion:insertionSort,merge:mergeSort,quick:quickSort};
+  ['bubble','insertion','merge','quick'].forEach(name=>{
+    const gen=sortFns[name](originalArray);
+    let cmps=0,swps=0;
+    let sortedSet=new Set();
+    let lastArr=[...originalArray];
+
+    const step=()=>{
+      const spd=parseInt(document.getElementById('speed').value);
+      const {value,done}=gen.next();
+      if(done||!value)return;
+      if(value.type==='compare')cmps++;
+      if(value.type==='swap')swps++;
+      if(value.type==='sorted')sortedSet.add(value.idx);
+      lastArr=value.arr;
+
+      const bars=lastArr.map((v,i)=>{
+        if(value.type==='done') return{v,state:'sorted'};
+        if(sortedSet.has(i)) return{v,state:'sorted'};
+        if(value.type==='compare'&&(i===value.i||i===value.j)) return{v,state:'comparing'};
+        if(value.type==='swap'&&(i===value.i||i===value.j)) return{v,state:'comparing'};
+        return{v,state:'default'};
+      });
+      renderChart(name,bars);
+      document.getElementById(`cmp-${name}`).textContent=cmps;
+      document.getElementById(`swp-${name}`).textContent=swps;
+
+      if(value.type==='done'){
+        clearInterval(timers[name]);
+        renderChart(name,lastArr.map(v=>({v,state:'sorted'})));
+        if(!raceOver){raceOver=true;document.getElementById(`box-${name}`).classList.add('winner');}
+      }
+    };
+    timers[name]=setInterval(step, Math.max(4, Math.floor(101-parseInt(document.getElementById('speed').value))));
+  });
+}
+
+resetRace();
+</script>
+</body>
+</html>
